@@ -5,7 +5,7 @@ import HealthCheck from './components/HealthCheck';
 function App() {
   return (
     <div className="App">
-      <h1>Job Tracker Application</h1>
+      <h1>Ben's Job Tracker is Live!</h1>
       <HealthCheck />
     </div>
   );
