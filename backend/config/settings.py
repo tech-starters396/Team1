@@ -20,7 +20,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+    'api',
+
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
@@ -28,7 +29,7 @@ INSTALLED_APPS = [
     'drf_yasg',
     
     # Local apps
-    'api',
+    'applications',
 ]
 
 MIDDLEWARE = [
@@ -125,3 +126,4 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
