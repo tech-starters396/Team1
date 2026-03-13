@@ -1,13 +1,16 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
-from rest_framework import status
+from django.http import JsonResponse
+from .models import Company
+from django.forms.models import model_to_dict
 
-class HealthCheckView(APIView):
-    permission_classes = [AllowAny]
-    
-    def get(self, request):
-        return Response({
-            'status': 'healthy',
-            'message': 'Django REST API is running!'
-        }, status=status.HTTP_200_OK)
+def company_list(request):
+    companies = Company.objects.all()
+    data = [model_to_dict(company) for company in companies]
+    return JsonResponse(data, safe=False)
+
+from django.http import JsonResponse
+
+def health_check(request):
+    return JsonResponse({
+        "status": "healthy",
+        "message": "Backend is running"
+    })
