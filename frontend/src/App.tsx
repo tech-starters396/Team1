@@ -1,5 +1,5 @@
 import { useState } from "react";
-import CompanyList from "./components/CompanyList";
+import JobList from "./components/JobList";
 
 function App() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -93,7 +93,7 @@ function App() {
         </div>
       )}
 
-      <CompanyList
+      <JobList
         searchTerm={searchTerm}
         locationFilter={locationFilter}
         jobTypeFilter={jobTypeFilter}
