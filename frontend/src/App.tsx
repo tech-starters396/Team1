@@ -1,104 +1,64 @@
 import { useState } from "react";
-import JobList from "./components/JobList";
+import Welcome from "./pages/Welcome";
+import Discover from "./pages/Discover";
+import MyJobs from "./pages/MyJobs";
+import Profile from "./pages/Profile";
 
 function App() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [locationFilter, setLocationFilter] = useState("");
-  const [jobTypeFilter, setJobTypeFilter] = useState("");
-  const [experienceFilter, setExperienceFilter] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState("welcome");
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case "welcome":
+        return <Welcome setCurrentPage={setCurrentPage} />;
+      case "discover":
+        return <Discover />;
+      case "my-jobs":
+        return <MyJobs />;
+      case "profile":
+        return <Profile />;
+      default:
+        return <Welcome setCurrentPage={setCurrentPage} />;
+    }
+  };
 
   return (
-    <div style={{ textAlign: "center", padding: "20px" }}>
-      <h1>Company Job Search Dashboard</h1>
-
-      {/* Search Section */}
-      <div style={{ marginBottom: "20px" }}>
-        <input
-          type="text"
-          placeholder="Search companies..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{
-            padding: "10px",
-            width: "250px",
-            borderRadius: "5px",
-            border: "1px solid #ccc",
-            marginRight: "10px"
-          }}
-        />
-
-        <button
-          style={{
-            padding: "10px 15px",
-            backgroundColor: "#1d4ed8",
-            color: "white",
-            border: "none",
-            borderRadius: "5px",
-            marginRight: "10px",
-            cursor: "pointer"
-          }}
+    <div className="min-h-screen bg-gray-50 font-sans">
+      <nav className="bg-white px-6 py-4 flex justify-between items-center shadow-sm">
+        <div 
+          className="font-bold text-xl text-blue-600 cursor-pointer" 
+          onClick={() => setCurrentPage("welcome")}
         >
-          Search Jobs
-        </button>
-
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          style={{
-            padding: "10px 15px",
-            backgroundColor: "#6b7280",
-            color: "white",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer"
-          }}
-        >
-          Filters
-        </button>
-      </div>
-
-      {/* Filter Panel */}
-      {showFilters && (
-        <div
-          style={{
-            marginBottom: "20px",
-            padding: "15px",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
-            display: "flex",
-            justifyContent: "center",
-            gap: "15px"
-          }}
-        >
-          <select onChange={(e) => setLocationFilter(e.target.value)}>
-            <option value="">Location</option>
-            <option value="Remote">Remote</option>
-            <option value="United States">United States</option>
-            <option value="California">California</option>
-          </select>
-
-          <select onChange={(e) => setJobTypeFilter(e.target.value)}>
-            <option value="">Job Type</option>
-            <option value="Remote">Remote</option>
-            <option value="Hybrid">Hybrid</option>
-            <option value="On-site">On-site</option>
-          </select>
-
-          <select onChange={(e) => setExperienceFilter(e.target.value)}>
-            <option value="">Experience</option>
-            <option value="Entry">Entry</option>
-            <option value="Mid">Mid</option>
-            <option value="Senior">Senior</option>
-          </select>
+          InternPortal
         </div>
-      )}
-
-      <JobList
-        searchTerm={searchTerm}
-        locationFilter={locationFilter}
-        jobTypeFilter={jobTypeFilter}
-        experienceFilter={experienceFilter}
-      />
+        <div className="flex gap-6">
+          <button 
+            onClick={() => setCurrentPage("welcome")} 
+            className={`font-medium ${currentPage === "welcome" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            Home
+          </button>
+          <button 
+            onClick={() => setCurrentPage("discover")} 
+            className={`font-medium ${currentPage === "discover" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            Discover
+          </button>
+          <button 
+            onClick={() => setCurrentPage("my-jobs")} 
+            className={`font-medium ${currentPage === "my-jobs" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            My Jobs
+          </button>
+          <button 
+            onClick={() => setCurrentPage("profile")} 
+            className={`font-medium ${currentPage === "profile" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            Profile
+          </button>
+        </div>
+      </nav>
+      <main>{renderPage()}</main>
     </div>
   );
 }

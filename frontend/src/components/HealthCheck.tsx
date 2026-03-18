@@ -29,7 +29,7 @@ function HealthCheck() {
       <h2>Backend Health Check</h2>
       {health && (
         <div style={{ color: 'green' }}>
-          <p>Status: {health.status === 'ok' ? 'healthy' : health.status}</p>
+          <p>Status: {health.status}</p>
           <p>Message: {health.message}</p>
         </div>
       )}

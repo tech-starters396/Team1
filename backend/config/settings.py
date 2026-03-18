@@ -20,8 +20,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'api',
-
+    
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
@@ -29,7 +28,7 @@ INSTALLED_APPS = [
     'drf_yasg',
     
     # Local apps
-    'applications',
+    'api',
 ]
 
 MIDDLEWARE = [
@@ -127,3 +126,6 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+import os # Make sure this is at the top of your file if it isn't already, or just add it here
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

@@ -1,41 +1,48 @@
-from django.http import JsonResponse
-from .models import Company, JobListing
-from django.forms.models import model_to_dict
-
-
-def company_list(request):
-    companies = Company.objects.all()
-    data = [model_to_dict(company) for company in companies]
-    return JsonResponse(data, safe=False)
-
-from django.http import JsonResponse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework import status
 from .models import JobListing
+from .serializers import JobListingSerializer
 
-def joblisting_list(request):
-    jobs = JobListing.objects.select_related("company").all()
+class HealthCheckView(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request):
+        return Response({"status": "healthy"}, status=status.HTTP_200_OK)
 
-    data = []
-    for job in jobs:
-        data.append({
-            "id": job.id,
-            "title": job.title,
-            "company": job.company.name,  #  NOW RETURNS NAME
-            "location": job.location,
-            "job_type": job.job_type,
-            "experience_level": job.experience_level,
-            "description": job.description,
-            "application_deadline": job.application_deadline,
-            "basic_qualifications": job.basic_qualifications,
-            "preferred_qualifications": job.preferred_qualifications,
-            "key_responsibilities": job.key_responsibilities,
-            "apply_url": job.apply_url,
-        })
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def get_jobs(request):
+    if request.method == 'GET':
+        jobs = JobListing.objects.all().order_by('-created_at')
+        serializer = JobListingSerializer(jobs, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == 'POST':
+        serializer = JobListingSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    return JsonResponse(data, safe=False)
+# ADD THIS NEW BLOCK: Handles Updating (PUT) and Deleting
+@api_view(['PUT', 'DELETE'])
+@permission_classes([AllowAny])
+def job_detail(request, pk):
+    try:
+        job = JobListing.objects.get(pk=pk)
+    except JobListing.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
 
-
-def health_check(request):
-    return JsonResponse({
-        "status": "healthy",
-        "message": "Backend is running"
-    })
+    if request.method == 'PUT':
+        # partial=True allows us to only update the "status" field without needing to resend the entire job
+        serializer = JobListingSerializer(job, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        job.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
