@@ -3,148 +3,260 @@ import apiClient from "../api/client";
 
 interface Job {
   id: number;
-  title: string;
-  company:string;
+  job_title: string;
+  company: string;
   location: string;
   experience_level: string;
   job_type: string;
   description: string;
-  application_deadline?: string;
+  salary?: string;
   key_responsibilities?: string;
-  basic_qualifications?: string;
-  preferred_qualifications?: string;
+  basic_qualifications?: string;            
+  preferred_qualifications?: string;        
   apply_url: string;
+  status?: string;
 }
-
 
 interface JobListProps {
   searchTerm: string;
   locationFilter: string;
   jobTypeFilter: string;
   experienceFilter: string;
+  salaryFilter: string;
 }
-
 
 function JobList({
   searchTerm,
   locationFilter,
   jobTypeFilter,
   experienceFilter,
+  salaryFilter,
 }: JobListProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+
+  const normalizeStatus = (status: string | undefined) => (status || "").trim().toLowerCase();
+  const extractSalaryNumbers = (salary: string | undefined) => {
+    if (!salary) return [];
+    return (salary.match(/\d[\d,]*/g) || [])
+      .map((value) => Number(value.replace(/,/g, "")))
+      .filter((value) => !Number.isNaN(value));
+  };
+
+  const matchesSalaryFilter = (salary: string | undefined, selectedRange: string) => {
+    if (selectedRange === "") return true;
+
+    const salaryValues = extractSalaryNumbers(salary);
+    if (salaryValues.length === 0) return false;
+
+    const highestSalary = Math.max(...salaryValues);
+
+    switch (selectedRange) {
+      case "under-50000":
+        return highestSalary < 50000;
+      case "50000-99999":
+        return highestSalary >= 50000 && highestSalary <= 99999;
+      case "100000-149999":
+        return highestSalary >= 100000 && highestSalary <= 149999;
+      case "150000-plus":
+        return highestSalary >= 150000;
+      default:
+        return true;
+    }
+  };
 
   useEffect(() => {
-    apiClient
-      .get("/joblistings/")
-      .then((response) => setJobs(response.data))
-      .catch((error) => console.error(error));
+    fetchJobs();
   }, []);
 
+  const fetchJobs = () => {
+    apiClient
+      .get("/companies/")
+      .then((response) =>
+        setJobs(
+          response.data.map((job: Job) => ({
+            ...job,
+            status: normalizeStatus(job.status),
+          }))
+        )
+      )
+      .catch((error) => console.error(error));
+  };
 
-  const filteredJobs = jobs.filter((job) => {
-  const search = searchTerm.trim().toLowerCase();
+  const handleSave = async (id: number) => {
+    try {
+      setJobs((currentJobs) =>
+        currentJobs.map((job) =>
+          job.id === id ? { ...job, status: "saved" } : job
+        )
+      );
 
-  const matchesSearch =
-    job.title.toLowerCase().includes(search) ||
-    job.company.toLowerCase().includes(search);
+      await apiClient.patch(`/companies/${id}/`, {
+        status: "saved"
+      });
+    } catch (err: any) {
+      console.error("ERROR RESPONSE:", err.response?.data);
+      fetchJobs();
+    }
+  };
 
-  const matchesLocation =
-    locationFilter === "" ||
-    job.location.toLowerCase().includes(locationFilter.toLowerCase());
+ const filteredJobs = jobs.filter((job) => {
+    const search = searchTerm.trim().toLowerCase();
 
-  const matchesType =
-    jobTypeFilter === "" ||
-    job.job_type.toLowerCase() === jobTypeFilter.toLowerCase();
+    const matchesSearch =
+      search === "" ||
+      job.job_title.toLowerCase().includes(search) ||
+      job.company.toLowerCase().includes(search) ||
+      job.location.toLowerCase().includes(search) ||
+      job.description.toLowerCase().includes(search);
 
-  const matchesExperience =
-    experienceFilter === "" ||
-    job.experience_level.toLowerCase() === experienceFilter.toLowerCase();
+    const matchesLocation =
+      locationFilter === "" ||
+      job.location.toLowerCase().includes(locationFilter.toLowerCase());
 
-  return matchesSearch && matchesLocation && matchesType && matchesExperience;
-});
+    const matchesType =
+      jobTypeFilter === "" ||
+      job.job_type.toLowerCase() === jobTypeFilter.toLowerCase();
 
+    const matchesExperience =
+      experienceFilter === "" ||
+      job.experience_level.toLowerCase() === experienceFilter.toLowerCase();
 
- 
+    const matchesSalary = matchesSalaryFilter(job.salary, salaryFilter);
+
+    return (
+      matchesSearch &&
+      matchesLocation &&
+      matchesType &&
+      matchesExperience &&
+      matchesSalary
+    );
+  });
+
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>Available Jobs</h2>
+    <div className="p-6 bg-gray-50 min-h-screen">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">
+        Discover Jobs
+      </h2>
 
       {filteredJobs.length === 0 ? (
-        <p>No jobs available.</p>
+        <p className="text-gray-500">No jobs available.</p>
       ) : (
         filteredJobs.map((job) => (
           <div
             key={job.id}
-            style={{
-              border: "1px solid #ddd",
-              padding: "20px",
-              marginBottom: "20px",
-              borderRadius: "8px",
-              textAlign: "left",
-            }}
+            className="bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm cursor-pointer hover:shadow-md transition"
+            onClick={() =>
+              setExpandedJobId(
+                expandedJobId === job.id ? null : job.id
+              )
+            }
           >
-            <h2>{job.title}</h2>
+            {/* BASIC INFO */}
+            <h2 className="text-lg font-bold text-gray-900">
+              {job.job_title}
+            </h2>
 
-            <p><strong>Location:</strong> {job.location}</p>
-            <p><strong>Experience Level:</strong> {job.experience_level}</p>
-            <p><strong>Job Type:</strong> {job.job_type}</p>
+            <p className="text-blue-600 font-semibold text-sm">
+              {job.company}
+            </p>
 
-            {job.application_deadline && (
-              <p>
-                <strong>Application Deadline:</strong> {job.application_deadline}
+            <p className="text-gray-600 text-sm">
+              {job.location} • {job.job_type}
+            </p>
+
+            {job.salary && (
+              <p className="text-green-600 font-semibold mt-1">
+                {job.salary}
               </p>
             )}
 
-            <h4>Description</h4>
-            <p>{job.description}</p>
+            {/* EXPANDED */}
+            {expandedJobId === job.id && (
+              <div className="mt-4 border-t pt-4">
 
-            {job.key_responsibilities && (
-              <>
-                <h4>Key Responsibilities</h4>
-                <pre style={{ whiteSpace: "pre-wrap" }}>
-                  {job.key_responsibilities}
-                </pre>
-              </>
+                {/* DESCRIPTION */}
+                <p className="text-gray-700 mb-3">
+                  {job.description}
+                </p>
+
+                {/* RESPONSIBILITIES */}
+                {job.key_responsibilities && (
+  <div className="mt-3">
+    <h4 className="font-semibold text-gray-800 mb-1">
+      Key Responsibilities
+    </h4>
+
+    <ul className="list-disc pl-5 text-sm text-gray-600 space-y-1">
+      {job.key_responsibilities
+        .split("\n")
+        .filter(line => line.trim() !== "")
+        .map((line, index) => (
+          <li key={index}>
+            {line.replace("-", "").trim()}
+          </li>
+        ))}
+    </ul>
+  </div>
+)}
+
+                {/*  BASIC QUALIFICATIONS BULLETS */}
+                {job.basic_qualifications && (
+                  <div className="mt-3">
+                    <h4 className="font-semibold text-gray-800 mb-2">
+                      Basic Qualifications
+                    </h4>
+                    <ul className="list-disc pl-5 text-sm text-gray-600 space-y-1">
+                      {job.basic_qualifications.split("\n").map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* PREFERRED QUALIFICATIONS BULLETS */}
+                {job.preferred_qualifications && (
+                  <div className="mt-3">
+                    <h4 className="font-semibold text-gray-800 mb-2">
+                      Preferred Qualifications
+                    </h4>
+                    <ul className="list-disc pl-5 text-sm text-gray-600 space-y-1">
+                      {job.preferred_qualifications.split("\n").map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* ACTIONS */}
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSave(job.id);
+                    }}
+                    className={`px-3 py-1 rounded-lg text-white ${
+                      normalizeStatus(job.status) === "saved"
+                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    }`}
+                  >
+                    {normalizeStatus(job.status) === "saved" ? "Saved" : "Save"}
+                  </button>
+
+                  <a
+                    href={job.apply_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button className="border border-gray-300 px-3 py-1 rounded-lg hover:bg-gray-100">
+                      Apply
+                    </button>
+                  </a>
+                </div>
+              </div>
             )}
-
-            {job.basic_qualifications && (
-              <>
-                <h4>Basic Qualifications</h4>
-                <pre style={{ whiteSpace: "pre-wrap" }}>
-                  {job.basic_qualifications}
-                </pre>
-              </>
-            )}
-
-            {job.preferred_qualifications && (
-              <>
-                <h4>Preferred Qualifications</h4>
-                <pre style={{ whiteSpace: "pre-wrap" }}>
-                  {job.preferred_qualifications}
-                </pre>
-              </>
-            )}
-
-            <a
-              href={job.apply_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ textDecoration: "none" }}
-            >
-              <button
-                style={{
-                  padding: "10px 16px",
-                  backgroundColor: "#1d4ed8",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  marginTop: "10px",
-                }}
-              >
-                Apply Now
-              </button>
-            </a>
           </div>
         ))
       )}
