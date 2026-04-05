@@ -9,11 +9,11 @@ export default function Welcome({ setCurrentPage }: { setCurrentPage: (page: str
         <div className="space-x-4">
           <button 
             onClick={() => setCurrentPage('discover')} 
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
           >
             Explore Jobs
           </button>
-          <button className="bg-white text-blue-600 border border-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors">
+          <button onClick={() => setCurrentPage('auth')} className="bg-slate-100 text-slate-700 border border-slate-200 px-6 py-3 rounded-lg font-semibold hover:bg-slate-200 transition-colors">
             Sign In
           </button>
         </div>
