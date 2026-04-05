@@ -15,9 +15,19 @@ interface Job {
   preferred_qualifications?: string;        
   apply_url: string;
   status?: string;
+  show_in_discover?: boolean;
+}
+
+interface AuthUser {
+  id: number;
+  username: string;
+  is_staff: boolean;
+  is_superuser: boolean;
 }
 
 interface JobListProps {
+  currentUser: AuthUser | null;
+  onRequireAuth: () => void;
   searchTerm: string;
   locationFilter: string;
   jobTypeFilter: string;
@@ -26,6 +36,8 @@ interface JobListProps {
 }
 
 function JobList({
+  currentUser,
+  onRequireAuth,
   searchTerm,
   locationFilter,
   jobTypeFilter,
@@ -34,6 +46,22 @@ function JobList({
 }: JobListProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newJob, setNewJob] = useState({
+    company: "",
+    job_title: "",
+    location: "",
+    salary: "",
+    job_type: "Full-time",
+    experience_level: "Entry",
+    description: "",
+    key_responsibilities: "",
+    basic_qualifications: "",
+    preferred_qualifications: "",
+    apply_url: "",
+    status: "new",
+    show_in_discover: true,
+  });
 
   const normalizeStatus = (status: string | undefined) => (status || "").trim().toLowerCase();
   const extractSalaryNumbers = (salary: string | undefined) => {
@@ -84,6 +112,11 @@ function JobList({
   };
 
   const handleSave = async (id: number) => {
+    if (!currentUser) {
+      onRequireAuth();
+      return;
+    }
+
     try {
       setJobs((currentJobs) =>
         currentJobs.map((job) =>
@@ -94,13 +127,59 @@ function JobList({
       await apiClient.patch(`/companies/${id}/`, {
         status: "saved"
       });
+      fetchJobs();
     } catch (err: any) {
       console.error("ERROR RESPONSE:", err.response?.data);
+      alert("Failed to save this job to your tracker.");
       fetchJobs();
     }
   };
 
- const filteredJobs = jobs.filter((job) => {
+  const handleAddDiscoverJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      await apiClient.post("/companies/", newJob);
+      setShowAddModal(false);
+      setNewJob({
+        company: "",
+        job_title: "",
+        location: "",
+        salary: "",
+        job_type: "Full-time",
+        experience_level: "Entry",
+        description: "",
+        key_responsibilities: "",
+        basic_qualifications: "",
+        preferred_qualifications: "",
+        apply_url: "",
+        status: "new",
+        show_in_discover: true,
+      });
+      fetchJobs();
+    } catch (err: any) {
+      console.error("Error adding discover job:", err.response?.data || err);
+      alert("Failed to add discover job.");
+    }
+  };
+
+  const handleDeleteDiscoverJob = async (id: number) => {
+    if (!confirm("Delete this job from Discover?")) return;
+
+    try {
+      await apiClient.delete(`/companies/${id}/`);
+      setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
+    } catch (err: any) {
+      console.error("Error deleting discover job:", err.response?.data || err);
+      alert("Failed to delete discover job.");
+    }
+  };
+
+ const discoverJobs = jobs.filter(
+    (job) => job.show_in_discover !== false
+  );
+
+ const filteredJobs = discoverJobs.filter((job) => {
     const search = searchTerm.trim().toLowerCase();
 
     const matchesSearch =
@@ -135,17 +214,34 @@ function JobList({
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">
-        Discover Jobs
-      </h2>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold text-gray-800">
+            Discover Jobs
+          </h2>
+          <span className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-600 shadow-sm">
+            {filteredJobs.length} job{filteredJobs.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        {currentUser?.is_staff && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 shadow-sm"
+          >
+            + Add Discover Job
+          </button>
+        )}
+      </div>
 
       {filteredJobs.length === 0 ? (
         <p className="text-gray-500">No jobs available.</p>
       ) : (
-        filteredJobs.map((job) => (
+        filteredJobs.map((job) => {
+          const isSavedToTracker = ["saved", "applied", "interview"].includes(normalizeStatus(job.status));
+          return (
           <div
             key={job.id}
-            className="bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm cursor-pointer hover:shadow-md transition"
+            className="group bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm cursor-pointer hover:shadow-md transition relative"
             onClick={() =>
               setExpandedJobId(
                 expandedJobId === job.id ? null : job.id
@@ -153,6 +249,17 @@ function JobList({
             }
           >
             {/* BASIC INFO */}
+            {currentUser?.is_staff && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteDiscoverJob(job.id);
+                }}
+                className="absolute right-4 top-4 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 opacity-0 transition group-hover:opacity-100"
+              >
+                Delete
+              </button>
+            )}
             <h2 className="text-lg font-bold text-gray-900">
               {job.job_title}
             </h2>
@@ -236,12 +343,12 @@ function JobList({
                       handleSave(job.id);
                     }}
                     className={`px-3 py-1 rounded-lg text-white ${
-                      normalizeStatus(job.status) === "saved"
+                      isSavedToTracker
                         ? "bg-emerald-600 hover:bg-emerald-700"
                         : "bg-blue-600 hover:bg-blue-700"
                     }`}
                   >
-                    {normalizeStatus(job.status) === "saved" ? "Saved" : "Save"}
+                    {isSavedToTracker ? "Saved" : "Save"}
                   </button>
 
                   <a
@@ -250,7 +357,7 @@ function JobList({
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <button className="border border-gray-300 px-3 py-1 rounded-lg hover:bg-gray-100">
+                    <button className="border border-slate-300 bg-slate-50 text-slate-700 px-3 py-1 rounded-lg hover:bg-slate-100 transition-colors">
                       Apply
                     </button>
                   </a>
@@ -258,7 +365,53 @@ function JobList({
               </div>
             )}
           </div>
-        ))
+          );
+        })
+      )}
+
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-8 shadow-2xl">
+            <h3 className="mb-6 text-2xl font-bold text-gray-800">Add Discover Job</h3>
+            <form onSubmit={handleAddDiscoverJob} className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Job Title</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.job_title} onChange={(e) => setNewJob({ ...newJob, job_title: e.target.value })} /></div>
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Company</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.company} onChange={(e) => setNewJob({ ...newJob, company: e.target.value })} /></div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Location</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.location} onChange={(e) => setNewJob({ ...newJob, location: e.target.value })} /></div>
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Salary</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.salary} onChange={(e) => setNewJob({ ...newJob, salary: e.target.value })} /></div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Job Type</label>
+                  <select className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.job_type} onChange={(e) => setNewJob({ ...newJob, job_type: e.target.value })}>
+                    <option value="Full-time">Full-time</option>
+                    <option value="Part-time">Part-time</option>
+                    <option value="Internship">Internship</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Experience</label>
+                  <select className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.experience_level} onChange={(e) => setNewJob({ ...newJob, experience_level: e.target.value })}>
+                    <option value="Entry">Entry</option>
+                    <option value="Mid">Mid</option>
+                    <option value="Senior">Senior</option>
+                  </select>
+                </div>
+              </div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Apply URL</label><input required type="url" className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.apply_url} onChange={(e) => setNewJob({ ...newJob, apply_url: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Description</label><textarea rows={4} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.description} onChange={(e) => setNewJob({ ...newJob, description: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Key Responsibilities</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.key_responsibilities} onChange={(e) => setNewJob({ ...newJob, key_responsibilities: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Basic Qualifications</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.basic_qualifications} onChange={(e) => setNewJob({ ...newJob, basic_qualifications: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Preferred Qualifications</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.preferred_qualifications} onChange={(e) => setNewJob({ ...newJob, preferred_qualifications: e.target.value })} /></div>
+              <div className="flex justify-end gap-3 border-t pt-4">
+                <button type="button" onClick={() => setShowAddModal(false)} className="rounded-lg px-5 py-2.5 font-medium text-gray-600 hover:bg-gray-100">Cancel</button>
+                <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700">Add Job</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
