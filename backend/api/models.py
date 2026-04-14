@@ -19,6 +19,7 @@ class JobListing(models.Model):
     resume = models.FileField(upload_to='resumes/', null=True, blank=True)
     cover_letter = models.FileField(upload_to='cover_letters/', null=True, blank=True)
     notes = models.TextField(blank=True)
+    show_in_discover = models.BooleanField(default=True)
 
     STATUS_CHOICES = [
         ('new', 'New'),

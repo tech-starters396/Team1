@@ -1,7 +1,20 @@
 import { useState } from "react";
 import JobList from "../components/JobList";
 
-export default function Discover() {
+interface AuthUser {
+  id: number;
+  username: string;
+  is_staff: boolean;
+  is_superuser: boolean;
+}
+
+export default function Discover({
+  currentUser,
+  onRequireAuth,
+}: {
+  currentUser: AuthUser | null;
+  onRequireAuth: () => void;
+}) {
   const [searchTerm, setSearchTerm] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [jobTypeFilter, setJobTypeFilter] = useState("");
@@ -79,6 +92,8 @@ export default function Discover() {
       {/* JOB LIST */}
       <div className="p-6">
         <JobList
+          currentUser={currentUser}
+          onRequireAuth={onRequireAuth}
           searchTerm={searchTerm}
           locationFilter={locationFilter}
           jobTypeFilter={jobTypeFilter}
