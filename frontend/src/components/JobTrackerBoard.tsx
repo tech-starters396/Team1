@@ -34,9 +34,11 @@ const getFileName = (url: string | undefined) => {
   return decodeURIComponent(url.split('/').pop() || '');
 };
 
+const API_ORIGIN = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
 const getFileDownloadUrl = (url: string) => {
   if (url.startsWith('http')) return url;
-  return `http://localhost:8000${url}`;
+  return new URL(url, API_ORIGIN.endsWith('/') ? API_ORIGIN : `${API_ORIGIN}/`).href;
 };
 
 export default function JobTrackerBoard() {
@@ -180,9 +182,7 @@ export default function JobTrackerBoard() {
     formData.append(field, file);
 
     try {
-      const response = await apiClient.put(`/companies/${viewDetailsJob.id}/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await apiClient.put(`/companies/${viewDetailsJob.id}/`, formData);
       setViewDetailsJob({ ...viewDetailsJob, [field]: response.data[field] });
       fetchJobs();
       alert(`${field === 'resume' ? 'Resume' : 'Cover Letter'} uploaded successfully!`);
