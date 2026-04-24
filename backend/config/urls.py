@@ -37,6 +37,6 @@ urlpatterns = [
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
 
-# Add this to serve media files (like resumes and cover letters) locally
-if settings.DEBUG:
+# Serve uploaded files from local disk in dev only (S3 URLs are absolute; no local serving needed)
+if settings.DEBUG and not getattr(settings, 'USE_S3', False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

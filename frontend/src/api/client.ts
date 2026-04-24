@@ -23,6 +23,20 @@ apiClient.interceptors.request.use(
   }
 );
 
+// FormData uploads: drop default JSON Content-Type so the browser sets
+// multipart/form-data with the correct boundary (required for Django to parse files).
+apiClient.interceptors.request.use((config) => {
+  if (config.data instanceof FormData) {
+    const h = config.headers;
+    if (typeof h.delete === 'function') {
+      h.delete('Content-Type');
+    } else {
+      delete (h as Record<string, unknown>)['Content-Type'];
+    }
+  }
+  return config;
+});
+
 // Response interceptor to handle token refresh
 apiClient.interceptors.response.use(
   (response) => response,
