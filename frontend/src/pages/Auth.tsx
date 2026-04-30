@@ -4,6 +4,7 @@ import apiClient from "../api/client";
 interface AuthUser {
   id: number;
   username: string;
+  email?: string;
   is_staff: boolean;
   is_superuser: boolean;
 }
@@ -18,6 +19,7 @@ export default function Auth({
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [role, setRole] = useState<"user" | "admin">("user");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,6 +34,7 @@ export default function Auth({
       const response = mode === "signup"
         ? await apiClient.post("/auth/signup/", {
             username,
+            email,
             password,
             password_confirm: passwordConfirm,
           })
@@ -131,6 +134,20 @@ export default function Auth({
                   required
                 />
               </div>
+              {mode === "signup" && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 outline-none focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                    placeholder="name@example.com"
+                    required
+                  />
+                  <p className="mt-2 text-xs text-gray-500">We use this to send saved-job reminder emails.</p>
+                </div>
+              )}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Password</label>
                 <input

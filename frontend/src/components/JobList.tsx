@@ -16,6 +16,7 @@ interface Job {
   apply_url: string;
   status?: string;
   show_in_discover?: boolean;
+  is_saved_by_current_user?: boolean;
 }
 
 interface AuthUser {
@@ -44,10 +45,7 @@ function JobList({
   experienceFilter,
   salaryFilter,
 }: JobListProps) {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newJob, setNewJob] = useState({
+  const emptyJobForm = {
     company: "",
     job_title: "",
     location: "",
@@ -61,7 +59,13 @@ function JobList({
     apply_url: "",
     status: "new",
     show_in_discover: true,
-  });
+  };
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingJobId, setEditingJobId] = useState<number | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [jobForm, setJobForm] = useState(emptyJobForm);
 
   const normalizeStatus = (status: string | undefined) => (status || "").trim().toLowerCase();
   const extractSalaryNumbers = (salary: string | undefined) => {
@@ -120,13 +124,19 @@ function JobList({
     try {
       setJobs((currentJobs) =>
         currentJobs.map((job) =>
-          job.id === id ? { ...job, status: "saved" } : job
+          job.id === id ? { ...job, is_saved_by_current_user: true } : job
         )
       );
+      setSaveMessage(null);
 
-      await apiClient.patch(`/companies/${id}/`, {
-        status: "saved"
+      const response = await apiClient.post(`/tracker/`, {
+        source_job: id
       });
+      setSaveMessage(
+        response.data.reminder_email_sent
+          ? "Saved to your tracker. A reminder email is on the way."
+          : "Saved to your tracker."
+      );
       fetchJobs();
     } catch (err: any) {
       console.error("ERROR RESPONSE:", err.response?.data);
@@ -139,27 +149,60 @@ function JobList({
     e.preventDefault();
 
     try {
-      await apiClient.post("/companies/", newJob);
+      await apiClient.post("/companies/", jobForm);
       setShowAddModal(false);
-      setNewJob({
-        company: "",
-        job_title: "",
-        location: "",
-        salary: "",
-        job_type: "Full-time",
-        experience_level: "Entry",
-        description: "",
-        key_responsibilities: "",
-        basic_qualifications: "",
-        preferred_qualifications: "",
-        apply_url: "",
-        status: "new",
-        show_in_discover: true,
-      });
+      setEditingJobId(null);
+      setJobForm(emptyJobForm);
       fetchJobs();
     } catch (err: any) {
       console.error("Error adding discover job:", err.response?.data || err);
       alert("Failed to add discover job.");
+    }
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingJobId(null);
+    setJobForm(emptyJobForm);
+    setShowAddModal(true);
+  };
+
+  const handleOpenEditModal = (job: Job) => {
+    setEditingJobId(job.id);
+    setJobForm({
+      company: job.company,
+      job_title: job.job_title,
+      location: job.location,
+      salary: job.salary || "",
+      job_type: job.job_type,
+      experience_level: job.experience_level,
+      description: job.description,
+      key_responsibilities: job.key_responsibilities || "",
+      basic_qualifications: job.basic_qualifications || "",
+      preferred_qualifications: job.preferred_qualifications || "",
+      apply_url: job.apply_url,
+      status: "new",
+      show_in_discover: true,
+    });
+    setShowAddModal(true);
+  };
+
+  const handleSaveDiscoverJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (editingJobId === null) {
+      await handleAddDiscoverJob(e);
+      return;
+    }
+
+    try {
+      await apiClient.put(`/companies/${editingJobId}/`, jobForm);
+      setShowAddModal(false);
+      setEditingJobId(null);
+      setJobForm(emptyJobForm);
+      fetchJobs();
+    } catch (err: any) {
+      console.error("Error updating discover job:", err.response?.data || err);
+      alert("Failed to update this job.");
     }
   };
 
@@ -215,17 +258,22 @@ function JobList({
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Discover Jobs
-          </h2>
-          <span className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-600 shadow-sm">
-            {filteredJobs.length} job{filteredJobs.length === 1 ? "" : "s"}
-          </span>
+        <div>
+          <div className="flex items-center gap-4">
+            <h2 className="text-2xl font-bold text-gray-800">
+              Discover Jobs
+            </h2>
+            <span className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-600 shadow-sm">
+              {filteredJobs.length} job{filteredJobs.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {saveMessage && (
+            <p className="mt-3 text-sm font-medium text-emerald-600">{saveMessage}</p>
+          )}
         </div>
         {currentUser?.is_staff && (
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={handleOpenAddModal}
             className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 shadow-sm"
           >
             + Add Discover Job
@@ -237,7 +285,7 @@ function JobList({
         <p className="text-gray-500">No jobs available.</p>
       ) : (
         filteredJobs.map((job) => {
-          const isSavedToTracker = ["saved", "applied", "interview"].includes(normalizeStatus(job.status));
+          const isSavedToTracker = Boolean(job.is_saved_by_current_user);
           return (
           <div
             key={job.id}
@@ -250,15 +298,26 @@ function JobList({
           >
             {/* BASIC INFO */}
             {currentUser?.is_staff && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteDiscoverJob(job.id);
-                }}
-                className="absolute right-4 top-4 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 opacity-0 transition group-hover:opacity-100"
-              >
-                Delete
-              </button>
+              <div className="absolute right-4 top-4 flex gap-2 opacity-0 transition group-hover:opacity-100">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenEditModal(job);
+                  }}
+                  className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteDiscoverJob(job.id);
+                  }}
+                  className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600"
+                >
+                  Delete
+                </button>
+              </div>
             )}
             <h2 className="text-lg font-bold text-gray-900">
               {job.job_title}
@@ -342,9 +401,10 @@ function JobList({
                       e.stopPropagation();
                       handleSave(job.id);
                     }}
+                    disabled={isSavedToTracker}
                     className={`px-3 py-1 rounded-lg text-white ${
                       isSavedToTracker
-                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        ? "bg-emerald-600 cursor-default"
                         : "bg-blue-600 hover:bg-blue-700"
                     }`}
                   >
@@ -372,20 +432,20 @@ function JobList({
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-8 shadow-2xl">
-            <h3 className="mb-6 text-2xl font-bold text-gray-800">Add Discover Job</h3>
-            <form onSubmit={handleAddDiscoverJob} className="space-y-4">
+            <h3 className="mb-6 text-2xl font-bold text-gray-800">{editingJobId === null ? "Add Discover Job" : "Edit Discover Job"}</h3>
+            <form onSubmit={handleSaveDiscoverJob} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
-                <div><label className="mb-1 block text-sm font-medium text-gray-700">Job Title</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.job_title} onChange={(e) => setNewJob({ ...newJob, job_title: e.target.value })} /></div>
-                <div><label className="mb-1 block text-sm font-medium text-gray-700">Company</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.company} onChange={(e) => setNewJob({ ...newJob, company: e.target.value })} /></div>
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Job Title</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.job_title} onChange={(e) => setJobForm({ ...jobForm, job_title: e.target.value })} /></div>
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Company</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.company} onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })} /></div>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <div><label className="mb-1 block text-sm font-medium text-gray-700">Location</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.location} onChange={(e) => setNewJob({ ...newJob, location: e.target.value })} /></div>
-                <div><label className="mb-1 block text-sm font-medium text-gray-700">Salary</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.salary} onChange={(e) => setNewJob({ ...newJob, salary: e.target.value })} /></div>
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Location</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} /></div>
+                <div><label className="mb-1 block text-sm font-medium text-gray-700">Salary</label><input required className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.salary} onChange={(e) => setJobForm({ ...jobForm, salary: e.target.value })} /></div>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Job Type</label>
-                  <select className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.job_type} onChange={(e) => setNewJob({ ...newJob, job_type: e.target.value })}>
+                  <select className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.job_type} onChange={(e) => setJobForm({ ...jobForm, job_type: e.target.value })}>
                     <option value="Full-time">Full-time</option>
                     <option value="Part-time">Part-time</option>
                     <option value="Internship">Internship</option>
@@ -393,21 +453,21 @@ function JobList({
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Experience</label>
-                  <select className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.experience_level} onChange={(e) => setNewJob({ ...newJob, experience_level: e.target.value })}>
+                  <select className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.experience_level} onChange={(e) => setJobForm({ ...jobForm, experience_level: e.target.value })}>
                     <option value="Entry">Entry</option>
                     <option value="Mid">Mid</option>
                     <option value="Senior">Senior</option>
                   </select>
                 </div>
               </div>
-              <div><label className="mb-1 block text-sm font-medium text-gray-700">Apply URL</label><input required type="url" className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.apply_url} onChange={(e) => setNewJob({ ...newJob, apply_url: e.target.value })} /></div>
-              <div><label className="mb-1 block text-sm font-medium text-gray-700">Description</label><textarea rows={4} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.description} onChange={(e) => setNewJob({ ...newJob, description: e.target.value })} /></div>
-              <div><label className="mb-1 block text-sm font-medium text-gray-700">Key Responsibilities</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.key_responsibilities} onChange={(e) => setNewJob({ ...newJob, key_responsibilities: e.target.value })} /></div>
-              <div><label className="mb-1 block text-sm font-medium text-gray-700">Basic Qualifications</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.basic_qualifications} onChange={(e) => setNewJob({ ...newJob, basic_qualifications: e.target.value })} /></div>
-              <div><label className="mb-1 block text-sm font-medium text-gray-700">Preferred Qualifications</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={newJob.preferred_qualifications} onChange={(e) => setNewJob({ ...newJob, preferred_qualifications: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Apply URL</label><input required type="url" className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.apply_url} onChange={(e) => setJobForm({ ...jobForm, apply_url: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Description</label><textarea rows={4} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.description} onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Key Responsibilities</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.key_responsibilities} onChange={(e) => setJobForm({ ...jobForm, key_responsibilities: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Basic Qualifications</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.basic_qualifications} onChange={(e) => setJobForm({ ...jobForm, basic_qualifications: e.target.value })} /></div>
+              <div><label className="mb-1 block text-sm font-medium text-gray-700">Preferred Qualifications</label><textarea rows={3} className="w-full rounded-lg border bg-gray-50 p-2.5 text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500" value={jobForm.preferred_qualifications} onChange={(e) => setJobForm({ ...jobForm, preferred_qualifications: e.target.value })} /></div>
               <div className="flex justify-end gap-3 border-t pt-4">
-                <button type="button" onClick={() => setShowAddModal(false)} className="rounded-lg px-5 py-2.5 font-medium text-gray-600 hover:bg-gray-100">Cancel</button>
-                <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700">Add Job</button>
+                <button type="button" onClick={() => { setShowAddModal(false); setEditingJobId(null); setJobForm(emptyJobForm); }} className="rounded-lg px-5 py-2.5 font-medium text-gray-600 hover:bg-gray-100">Cancel</button>
+                <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700">{editingJobId === null ? "Add Job" : "Save Changes"}</button>
               </div>
             </form>
           </div>

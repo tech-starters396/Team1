@@ -1,16 +1,21 @@
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework import status
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import status
-from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import JobListing
-from .serializers import JobListingSerializer, RoleAwareTokenObtainPairSerializer, SignupSerializer, UserSerializer
+from .notifications import send_saved_job_reminder_email
+from .serializers import (
+    JobListingSerializer,
+    RoleAwareTokenObtainPairSerializer,
+    SignupSerializer,
+    UserSerializer,
+)
 
 
-# ✅ Health check
 class HealthCheckView(APIView):
     permission_classes = [AllowAny]
 
@@ -40,28 +45,23 @@ class SignupView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ✅ GET ALL JOBS + CREATE NEW JOB
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
 def get_jobs(request):
-
     if request.method == 'GET':
-        jobs = JobListing.objects.all()
-        serializer = JobListingSerializer(jobs, many=True)
+        jobs = JobListing.objects.filter(owner__isnull=True, show_in_discover=True).order_by('company', 'job_title')
+        serializer = JobListingSerializer(jobs, many=True, context={'request': request})
         return Response(serializer.data)
 
-    elif request.method == 'POST':
-        if not request.user.is_authenticated:
-            return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return Response({"detail": "Only admins can create discover page jobs."}, status=status.HTTP_403_FORBIDDEN)
 
-        if request.data.get('show_in_discover') is True and not request.user.is_staff:
-            return Response({"detail": "Only admins can create discover page jobs."}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = JobListingSerializer(data=request.data)  # ✅ FIXED
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    serializer = JobListingSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save(owner=None, source_job=None, show_in_discover=True, status='new')
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['PUT', 'PATCH', 'DELETE'])
@@ -69,43 +69,106 @@ def get_jobs(request):
 @parser_classes([JSONParser, MultiPartParser, FormParser])
 def job_detail(request, pk):
     try:
-        job = JobListing.objects.get(pk=pk)
+        job = JobListing.objects.get(pk=pk, owner__isnull=True)
     except JobListing.DoesNotExist:
-        return Response(status=404)
+        return Response(status=status.HTTP_404_NOT_FOUND)
 
-    if not request.user.is_authenticated:
-        return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
-
-    # ✅ HANDLE BOTH PUT + PATCH
-    if request.method in ['PUT', 'PATCH']:
-        if request.data.get('show_in_discover') is True and not request.user.is_staff:
-            return Response({"detail": "Only admins can manage discover page jobs."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = JobListingSerializer(job, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=400)
-
-    elif request.method == 'DELETE':
-        if not request.user.is_staff:
+    if request.method == 'DELETE':
+        if not request.user.is_authenticated or not request.user.is_staff:
             return Response({"detail": "Only admins can delete discover page jobs."}, status=status.HTTP_403_FORBIDDEN)
         job.delete()
-        return Response(status=204)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-    # ✅ GET SINGLE JOB
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return Response({"detail": "Only admins can update discover page jobs."}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = JobListingSerializer(job, data=request.data, partial=True, context={'request': request})
+    if serializer.is_valid():
+        serializer.save(owner=None, source_job=None, show_in_discover=True)
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
+def tracker_jobs(request):
     if request.method == 'GET':
-        serializer = JobListingSerializer(job)
+        jobs = JobListing.objects.filter(owner=request.user).order_by('-id')
+        serializer = JobListingSerializer(jobs, many=True, context={'request': request})
         return Response(serializer.data)
 
-    # ✅ UPDATE (STATUS, NOTES, FILES, ETC.)
-    elif request.method == 'PUT':
-        serializer = JobListingSerializer(job, data=request.data, partial=True)  # ✅ KEY FIX
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    source_job_id = request.data.get('source_job')
+    if source_job_id:
+        try:
+            source_job = JobListing.objects.get(pk=source_job_id, owner__isnull=True, show_in_discover=True)
+        except JobListing.DoesNotExist:
+            return Response({"detail": "That discover job could not be found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # ✅ DELETE
-    elif request.method == 'DELETE':
-        job.delete()
-        return Response({"message": "Deleted"}, status=status.HTTP_204_NO_CONTENT)
+        tracked_job, created = JobListing.objects.get_or_create(
+            owner=request.user,
+            source_job=source_job,
+            defaults={
+                'job_title': source_job.job_title,
+                'company': source_job.company,
+                'description': source_job.description,
+                'key_responsibilities': source_job.key_responsibilities,
+                'basic_qualifications': source_job.basic_qualifications,
+                'preferred_qualifications': source_job.preferred_qualifications,
+                'salary': source_job.salary,
+                'job_type': source_job.job_type,
+                'location': source_job.location,
+                'experience_level': source_job.experience_level,
+                'apply_url': source_job.apply_url,
+                'show_in_discover': False,
+                'status': 'saved',
+            },
+        )
+
+        if not created and tracked_job.status == 'new':
+            tracked_job.status = 'saved'
+            tracked_job.save(update_fields=['status'])
+
+        reminder_sent = send_saved_job_reminder_email(
+            recipient_email=request.user.email,
+            username=request.user.username,
+            job_title=tracked_job.job_title,
+            company=tracked_job.company,
+        )
+        serializer = JobListingSerializer(tracked_job, context={'request': request})
+        response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(
+            {
+                'job': serializer.data,
+                'already_saved': not created,
+                'reminder_email_sent': reminder_sent,
+            },
+            status=response_status,
+        )
+
+    serializer = JobListingSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        tracked_job = serializer.save(owner=request.user, source_job=None, show_in_discover=False)
+        serializer = JobListingSerializer(tracked_job, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['PUT', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
+def tracker_job_detail(request, pk):
+    try:
+        tracked_job = JobListing.objects.get(pk=pk, owner=request.user)
+    except JobListing.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        tracked_job.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = JobListingSerializer(tracked_job, data=request.data, partial=True, context={'request': request})
+    if serializer.is_valid():
+        serializer.save(owner=request.user, source_job=tracked_job.source_job, show_in_discover=False)
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

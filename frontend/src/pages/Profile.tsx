@@ -1,13 +1,18 @@
+import { useState } from "react";
+import JobTrackerAnalytics from "../components/JobTrackerAnalytics";
 import JobTrackerBoard from "../components/JobTrackerBoard";
 
 interface AuthUser {
   id: number;
   username: string;
+  email?: string;
   is_staff: boolean;
   is_superuser: boolean;
 }
 
 export default function Profile({ currentUser }: { currentUser: AuthUser | null }) {
+  const [trackerRefreshSignal, setTrackerRefreshSignal] = useState(0);
+
   if (!currentUser) {
     return (
       <div className="p-8 max-w-3xl mx-auto">
@@ -31,10 +36,20 @@ export default function Profile({ currentUser }: { currentUser: AuthUser | null 
             <h3 className="text-2xl font-bold text-gray-900">{currentUser.username}</h3>
             <p className="text-gray-500 flex items-center mt-1"><span className="mr-2">🔐</span> {currentUser.is_staff ? "Admin" : "User"} account</p>
             <p className="text-gray-500 flex items-center mt-1"><span className="mr-2">💼</span> Manage your personal job search information here.</p>
+            {!currentUser.is_staff && !currentUser.email && (
+              <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+                Add an email to this account in Django admin if you want saved-job reminder emails to be delivered.
+              </p>
+            )}
           </div>
         </div>
       </div>
-      {!currentUser.is_staff && <JobTrackerBoard />}
+      {!currentUser.is_staff && (
+        <>
+          <JobTrackerAnalytics refreshSignal={trackerRefreshSignal} />
+          <JobTrackerBoard onJobsChanged={() => setTrackerRefreshSignal((current) => current + 1)} />
+        </>
+      )}
     </div>
   );
 }

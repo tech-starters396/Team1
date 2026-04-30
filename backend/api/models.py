@@ -1,6 +1,21 @@
+from django.conf import settings
 from django.db import models
 
 class JobListing(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='tracked_jobs',
+        null=True,
+        blank=True,
+    )
+    source_job = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='tracker_copies',
+        null=True,
+        blank=True,
+    )
     job_title = models.CharField(max_length=200)
     company = models.CharField(max_length=200)
 

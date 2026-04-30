@@ -8,6 +8,7 @@ from .models import JobListing
 class UserSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     username = serializers.CharField()
+    email = serializers.EmailField(allow_blank=True)
     is_staff = serializers.BooleanField()
     is_superuser = serializers.BooleanField()
 
@@ -31,6 +32,7 @@ class RoleAwareTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class SignupSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True, min_length=8)
 
@@ -47,6 +49,7 @@ class SignupSerializer(serializers.Serializer):
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data['username'],
+            email=validated_data.get('email', ''),
             password=validated_data['password'],
         )
         refresh = RefreshToken.for_user(user)
@@ -57,6 +60,7 @@ class SignupSerializer(serializers.Serializer):
         }
 
 class JobListingSerializer(serializers.ModelSerializer):
+    is_saved_by_current_user = serializers.SerializerMethodField()
     _CREATE_DEFAULTS = {
         'key_responsibilities': '',
         'job_type': '',
@@ -79,7 +83,25 @@ class JobListingSerializer(serializers.ModelSerializer):
             'key_responsibilities': {'required': False, 'allow_blank': True},
             'basic_qualifications': {'required': False},
             'preferred_qualifications': {'required': False},
+            'owner': {'required': False},
+            'source_job': {'required': False},
         }
+
+    def get_is_saved_by_current_user(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+
+        if obj.owner_id == request.user.id:
+            return True
+
+        if obj.owner_id is not None:
+            return False
+
+        return JobListing.objects.filter(
+            owner=request.user,
+            source_job=obj,
+        ).exists()
 
     def create(self, validated_data):
         for field, default in self._CREATE_DEFAULTS.items():

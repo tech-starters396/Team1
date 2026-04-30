@@ -41,7 +41,7 @@ const getFileDownloadUrl = (url: string) => {
   return new URL(url, API_ORIGIN.endsWith('/') ? API_ORIGIN : `${API_ORIGIN}/`).href;
 };
 
-export default function JobTrackerBoard() {
+export default function JobTrackerBoard({ onJobsChanged }: { onJobsChanged?: () => void }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggedJobId, setDraggedJobId] = useState<number | null>(null);
@@ -59,13 +59,14 @@ export default function JobTrackerBoard() {
 
   const fetchJobs = async () => {
     try {
-      const response = await apiClient.get('/companies/');
+      const response = await apiClient.get('/tracker/');
       setJobs(
         response.data.map((job: Job) => ({
           ...job,
           status: normalizeStatus(job.status),
         }))
       );
+      onJobsChanged?.();
       setLoading(false);
     } catch (err) {
       console.error('Error fetching jobs:', err);
@@ -80,7 +81,7 @@ export default function JobTrackerBoard() {
   const handleAddJob = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await apiClient.post('/companies/', newJob);
+      await apiClient.post('/tracker/', newJob);
       setShowAddModal(false);
       setNewJob({ company: '', job_title: '', location: '', salary: '', status: 'saved', description: '', notes: '', show_in_discover: false });
       fetchJobs();
@@ -92,7 +93,7 @@ export default function JobTrackerBoard() {
 
   const handleStatusChange = async (id: number, newStatus: string) => {
     try {
-      await apiClient.put(`/companies/${id}/`, { status: newStatus });
+      await apiClient.put(`/tracker/${id}/`, { status: newStatus });
       fetchJobs();
       if (viewDetailsJob && viewDetailsJob.id === id) {
         setViewDetailsJob({ ...viewDetailsJob, status: newStatus });
@@ -135,7 +136,7 @@ export default function JobTrackerBoard() {
     setDragOverStatus(null);
 
     try {
-      await apiClient.put(`/companies/${jobId}/`, { status });
+      await apiClient.put(`/tracker/${jobId}/`, { status });
       if (viewDetailsJob && viewDetailsJob.id === jobId) {
         setViewDetailsJob({ ...viewDetailsJob, status });
       }
@@ -152,10 +153,7 @@ export default function JobTrackerBoard() {
     if (!confirm('Remove this job from your tracker?')) return;
 
     try {
-      await apiClient.put(`/companies/${id}/`, {
-        status: 'new',
-      });
-
+      await apiClient.delete(`/tracker/${id}/`);
       fetchJobs();
       setViewDetailsJob(null);
     } catch (err) {
@@ -166,7 +164,7 @@ export default function JobTrackerBoard() {
   const handleSaveNote = async () => {
     if (!viewDetailsJob) return;
     try {
-      await apiClient.put(`/companies/${viewDetailsJob.id}/`, { notes: viewDetailsJob.notes });
+      await apiClient.put(`/tracker/${viewDetailsJob.id}/`, { notes: viewDetailsJob.notes });
       fetchJobs();
       alert('Note saved successfully!');
     } catch (err) {
@@ -182,7 +180,7 @@ export default function JobTrackerBoard() {
     formData.append(field, file);
 
     try {
-      const response = await apiClient.put(`/companies/${viewDetailsJob.id}/`, formData);
+      const response = await apiClient.put(`/tracker/${viewDetailsJob.id}/`, formData);
       setViewDetailsJob({ ...viewDetailsJob, [field]: response.data[field] });
       fetchJobs();
       alert(`${field === 'resume' ? 'Resume' : 'Cover Letter'} uploaded successfully!`);
