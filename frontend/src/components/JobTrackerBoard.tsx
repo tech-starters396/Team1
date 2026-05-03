@@ -53,6 +53,9 @@ export default function JobTrackerBoard({ onJobsChanged }: { onJobsChanged?: () 
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewDetailsJob, setViewDetailsJob] = useState<Job | null>(null);
   const [newJob, setNewJob] = useState({ company: '', job_title: '', location: '', salary: '', status: 'saved', description: '', notes: '', show_in_discover: false });
+  const [inlineEdit, setInlineEdit] = useState<null | 'title' | 'description'>(null);
+  const [inlineDraft, setInlineDraft] = useState('');
+  const [pendingDetailEditField, setPendingDetailEditField] = useState<null | 'title' | 'description'>(null);
 
   const resumeInputRef = useRef<HTMLInputElement>(null);
   const coverLetterInputRef = useRef<HTMLInputElement>(null);
@@ -77,6 +80,17 @@ export default function JobTrackerBoard({ onJobsChanged }: { onJobsChanged?: () 
   useEffect(() => {
     fetchJobs();
   }, []);
+
+  useEffect(() => {
+    if (!viewDetailsJob || !pendingDetailEditField) return;
+    setInlineDraft(
+      pendingDetailEditField === 'title'
+        ? viewDetailsJob.job_title
+        : viewDetailsJob.description
+    );
+    setInlineEdit(pendingDetailEditField);
+    setPendingDetailEditField(null);
+  }, [viewDetailsJob, pendingDetailEditField]);
 
   const handleAddJob = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,7 +169,7 @@ export default function JobTrackerBoard({ onJobsChanged }: { onJobsChanged?: () 
     try {
       await apiClient.delete(`/tracker/${id}/`);
       fetchJobs();
-      setViewDetailsJob(null);
+      closeDetailModal();
     } catch (err) {
       console.error('Error removing job:', err);
     }
@@ -169,6 +183,43 @@ export default function JobTrackerBoard({ onJobsChanged }: { onJobsChanged?: () 
       alert('Note saved successfully!');
     } catch (err) {
       console.error('Error saving note:', err);
+    }
+  };
+
+  const closeDetailModal = () => {
+    setViewDetailsJob(null);
+    setInlineEdit(null);
+    setInlineDraft('');
+  };
+
+  const startInlineEdit = (field: 'title' | 'description') => {
+    if (!viewDetailsJob) return;
+    setInlineDraft(field === 'title' ? viewDetailsJob.job_title : viewDetailsJob.description);
+    setInlineEdit(field);
+  };
+
+  const cancelInlineEdit = () => {
+    setInlineEdit(null);
+    setInlineDraft('');
+  };
+
+  const saveInlineEdit = async () => {
+    if (!viewDetailsJob || !inlineEdit) return;
+    const payload =
+      inlineEdit === 'title' ? { job_title: inlineDraft } : { description: inlineDraft };
+    try {
+      await apiClient.put(`/tracker/${viewDetailsJob.id}/`, payload);
+      const field = inlineEdit === 'title' ? 'job_title' : 'description';
+      const next = { ...viewDetailsJob, [field]: inlineDraft };
+      setViewDetailsJob(next);
+      setJobs((current) =>
+        current.map((j) => (j.id === next.id ? { ...j, [field]: inlineDraft } : j))
+      );
+      cancelInlineEdit();
+      fetchJobs();
+    } catch (err) {
+      console.error('Error updating job:', err);
+      alert('Could not save changes.');
     }
   };
 
@@ -301,18 +352,51 @@ export default function JobTrackerBoard({ onJobsChanged }: { onJobsChanged?: () 
                       onDragEnd={handleDragEnd}
                       className={`bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition relative group cursor-grab active:cursor-grabbing ${draggedJobId === job.id ? 'opacity-60 ring-2 ring-blue-300' : ''}`}
                     >
-                      <button onClick={() => handleDelete(job.id)} className="absolute top-3 right-3 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">✖</button>
-                      <h4 className="font-bold text-lg text-gray-900 leading-tight">{job.job_title}</h4>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(job.id); }} className="absolute top-3 right-3 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">✖</button>
+                      <div className="flex flex-wrap items-start gap-2 pr-16">
+                        <h4 className="font-bold text-lg text-gray-900 leading-tight break-words">{job.job_title}</h4>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDetailEditField('title');
+                            setViewDetailsJob(job);
+                          }}
+                          className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                        >
+                          Edit
+                        </button>
+                      </div>
                       <p className="text-blue-600 font-semibold mb-3 text-sm">{job.company}</p>
                       <div className="text-xs text-gray-600 mb-1">📍 {job.location}</div>
                       <div className="text-xs text-gray-600 mb-4">💰 {job.salary}</div>
-                      <div className="pt-3 border-t border-gray-100 flex gap-2 items-center">
+                      <div className="pt-3 border-t border-gray-100 flex flex-wrap gap-2 items-center">
                         <select value={job.status} onChange={(e) => handleStatusChange(job.id, e.target.value)} className="flex-1 bg-gray-50 border border-gray-200 text-xs rounded-lg p-1.5 text-gray-800">
                           {TRACKER_STATUSES.map(s => (
                             <option key={s} value={s}>Move to {formatStatusLabel(s)}</option>
                           ))}
                         </select>
-                        <button onClick={() => setViewDetailsJob(job)} className="text-xs font-semibold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg">View Details</button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewDetailsJob(job);
+                          }}
+                          className="text-xs font-semibold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg"
+                        >
+                          View Details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDetailEditField('description');
+                            setViewDetailsJob(job);
+                          }}
+                          className="text-xs font-semibold text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg hover:bg-gray-200"
+                        >
+                          Edit description
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -362,23 +446,82 @@ export default function JobTrackerBoard({ onJobsChanged }: { onJobsChanged?: () 
       {viewDetailsJob && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl relative flex flex-col md:flex-row">
-            <button onClick={() => setViewDetailsJob(null)} className="absolute top-4 right-6 text-gray-400 hover:text-gray-800 text-4xl font-light transition z-10">&times;</button>
+            <button onClick={closeDetailModal} className="absolute top-4 right-6 text-gray-400 hover:text-gray-800 text-4xl font-light transition z-10">&times;</button>
 
             <div className="flex-1 p-8 border-r border-gray-100">
               <div className="mb-6">
-                <button className="text-gray-500 hover:text-gray-800 mb-4 flex items-center font-medium" onClick={() => setViewDetailsJob(null)}>&larr; Back to Jobs</button>
+                <button className="text-gray-500 hover:text-gray-800 mb-4 flex items-center font-medium" onClick={closeDetailModal}>&larr; Back to Jobs</button>
                 <div className="flex items-center gap-4 border border-gray-200 p-4 rounded-2xl shadow-sm">
                   <div className="w-16 h-16 bg-indigo-500 rounded-xl flex items-center justify-center text-white text-2xl font-bold shadow-md">{viewDetailsJob.company.charAt(0)}</div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-900 leading-tight">{viewDetailsJob.job_title}</h2>
-                    <p className="text-gray-600 font-medium flex items-center gap-2 mt-1"><span>🏢 {viewDetailsJob.company}</span> • <span>📍 {viewDetailsJob.location}</span></p>
+                  <div className="min-w-0 flex-1">
+                    {inlineEdit === 'title' ? (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-xl font-bold text-gray-900 [color-scheme:light] outline-none focus:ring-2 focus:ring-blue-500"
+                          value={inlineDraft}
+                          onChange={(e) => setInlineDraft(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={saveInlineEdit} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
+                            Save
+                          </button>
+                          <button type="button" onClick={cancelInlineEdit} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-start gap-2">
+                        <h2 className="text-3xl font-bold text-gray-900 leading-tight break-words">{viewDetailsJob.job_title}</h2>
+                        <button
+                          type="button"
+                          onClick={() => startInlineEdit('title')}
+                          className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-gray-600 font-medium flex flex-wrap items-center gap-2 mt-1"><span>🏢 {viewDetailsJob.company}</span> • <span>📍 {viewDetailsJob.location}</span></p>
                   </div>
                 </div>
               </div>
 
               <div className="mb-8 border border-gray-200 rounded-2xl p-6 shadow-sm">
-                <h3 className="text-xl font-bold text-gray-900 mb-4">Job Description</h3>
-                <div className="text-gray-700 leading-relaxed whitespace-pre-wrap">{viewDetailsJob.description || 'No description provided.'}</div>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xl font-bold text-gray-900">Job Description</h3>
+                  {inlineEdit !== 'description' ? (
+                    <button
+                      type="button"
+                      onClick={() => startInlineEdit('description')}
+                      className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={saveInlineEdit} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
+                        Save
+                      </button>
+                      <button type="button" onClick={cancelInlineEdit} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {inlineEdit === 'description' ? (
+                  <textarea
+                    rows={10}
+                    className="w-full rounded-xl border border-gray-300 bg-white p-4 text-gray-900 [color-scheme:light] outline-none focus:ring-2 focus:ring-blue-500"
+                    value={inlineDraft}
+                    onChange={(e) => setInlineDraft(e.target.value)}
+                    autoFocus
+                  />
+                ) : (
+                  <div className="text-gray-700 leading-relaxed whitespace-pre-wrap">{viewDetailsJob.description || 'No description provided.'}</div>
+                )}
               </div>
 
               <div className="border border-gray-200 rounded-2xl p-6 bg-gray-50/50 shadow-sm">

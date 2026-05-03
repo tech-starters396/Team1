@@ -1,4 +1,11 @@
 import { useEffect, useState } from "react";
+
+type DiscoverInlineField = "title" | "description";
+
+interface DiscoverInlineEdit {
+  jobId: number;
+  field: DiscoverInlineField;
+}
 import apiClient from "../api/client";
 
 interface Job {
@@ -66,6 +73,8 @@ function JobList({
   const [editingJobId, setEditingJobId] = useState<number | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [jobForm, setJobForm] = useState(emptyJobForm);
+  const [discoverInlineEdit, setDiscoverInlineEdit] = useState<DiscoverInlineEdit | null>(null);
+  const [discoverInlineDraft, setDiscoverInlineDraft] = useState("");
 
   const normalizeStatus = (status: string | undefined) => (status || "").trim().toLowerCase();
   const extractSalaryNumbers = (salary: string | undefined) => {
@@ -100,6 +109,53 @@ function JobList({
   useEffect(() => {
     fetchJobs();
   }, []);
+
+  useEffect(() => {
+    if (!discoverInlineEdit || discoverInlineEdit.field !== "description") return;
+    const { jobId } = discoverInlineEdit;
+    if (expandedJobId !== jobId) {
+      setDiscoverInlineEdit(null);
+      setDiscoverInlineDraft("");
+    }
+  }, [expandedJobId, discoverInlineEdit]);
+
+  const startDiscoverInlineEdit = (job: Job, field: DiscoverInlineField) => {
+    setDiscoverInlineEdit({ jobId: job.id, field });
+    setDiscoverInlineDraft(field === "title" ? job.job_title : job.description);
+  };
+
+  const cancelDiscoverInlineEdit = () => {
+    setDiscoverInlineEdit(null);
+    setDiscoverInlineDraft("");
+  };
+
+  const saveDiscoverInlineEdit = async () => {
+    if (!discoverInlineEdit) return;
+
+    const payload =
+      discoverInlineEdit.field === "title"
+        ? { job_title: discoverInlineDraft }
+        : { description: discoverInlineDraft };
+
+    try {
+      await apiClient.put(`/companies/${discoverInlineEdit.jobId}/`, payload);
+      const field =
+        discoverInlineEdit.field === "title" ? "job_title" : "description";
+
+      setJobs((currentJobs) =>
+        currentJobs.map((job) =>
+          job.id === discoverInlineEdit.jobId
+            ? { ...job, [field]: discoverInlineDraft }
+            : job
+        )
+      );
+      cancelDiscoverInlineEdit();
+      fetchJobs();
+    } catch (err: unknown) {
+      console.error("Error updating job inline:", err);
+      alert("Failed to update job.");
+    }
+  };
 
   const fetchJobs = () => {
     apiClient
@@ -319,9 +375,56 @@ function JobList({
                 </button>
               </div>
             )}
-            <h2 className="text-lg font-bold text-gray-900">
-              {job.job_title}
-            </h2>
+            {currentUser?.is_staff &&
+            discoverInlineEdit?.jobId === job.id &&
+            discoverInlineEdit.field === "title" ? (
+              <div className="pr-20" onClick={(e) => e.stopPropagation()}>
+                <input
+                  className="mb-2 w-full rounded-lg border border-gray-300 bg-white p-2 text-lg font-bold text-gray-900 [color-scheme:light] outline-none focus:ring-2 focus:ring-blue-500"
+                  value={discoverInlineDraft}
+                  onChange={(e) => setDiscoverInlineDraft(e.target.value)}
+                  autoFocus
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      saveDiscoverInlineEdit();
+                    }}
+                    className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cancelDiscoverInlineEdit();
+                    }}
+                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-start gap-2">
+                <h2 className="text-lg font-bold text-gray-900">{job.job_title}</h2>
+                {currentUser?.is_staff && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      startDiscoverInlineEdit(job, "title");
+                    }}
+                    className="rounded-full bg-gray-50 px-2.5 py-0.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+            )}
 
             <p className="text-blue-600 font-semibold text-sm">
               {job.company}
@@ -342,9 +445,64 @@ function JobList({
               <div className="mt-4 border-t pt-4">
 
                 {/* DESCRIPTION */}
-                <p className="text-gray-700 mb-3">
-                  {job.description}
-                </p>
+                <div className="mb-3">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-gray-800">Description</span>
+                    {currentUser?.is_staff && (
+                      <>
+                        {discoverInlineEdit?.jobId === job.id &&
+                        discoverInlineEdit.field === "description" ? (
+                          <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                saveDiscoverInlineEdit();
+                              }}
+                              className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelDiscoverInlineEdit();
+                              }}
+                              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startDiscoverInlineEdit(job, "description");
+                            }}
+                            className="rounded-full bg-gray-50 px-2.5 py-0.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {discoverInlineEdit?.jobId === job.id &&
+                  discoverInlineEdit.field === "description" ? (
+                    <textarea
+                      rows={6}
+                      className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 [color-scheme:light] outline-none focus:ring-2 focus:ring-blue-500"
+                      value={discoverInlineDraft}
+                      onChange={(e) => setDiscoverInlineDraft(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                    />
+                  ) : (
+                    <p className="text-gray-700">{job.description}</p>
+                  )}
+                </div>
 
                 {/* RESPONSIBILITIES */}
                 {job.key_responsibilities && (

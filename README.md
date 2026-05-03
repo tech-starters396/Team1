@@ -1,273 +1,309 @@
-# Developer Guide
+# InternPortal — Job Application Tracker
 
-## Quick Overview
-
-Full-stack job search application with React, Django REST, PostgreSQL, all containerized with Docker.
-
-**Tech Stack:**
-- Frontend: React 18 + TypeScript + Vite
-- Backend: Django 5.0 + Django REST Framework
-- Database: PostgreSQL 15
-- DevOps: Docker + Docker Compose
+Professional full-stack job discovery and application tracking platform. Browse curated listings (**Discover**), save roles to a personal Kanban-style **Job Tracker**, upload resumes and cover letters, and monitor progress with lightweight **analytics**.
 
 ---
 
-## Prerequisites (One-Time Install)
+## Project Overview
 
-1. **Docker Desktop**: https://www.docker.com/products/docker-desktop/
-2. **Git**: https://git-scm.com/
-3. **VS Code** (recommended): https://code.visualstudio.com/
+InternPortal helps students and interns:
 
-**You DON'T need:** Python, Node.js, PostgreSQL, or any packages. Docker handles everything.
+- **Explore** publicly posted jobs (Discover).
+- **Track** applications across stages (Saved → Applied → Interview).
+- **Persist** job details, notes, and documents securely.
+- **Authenticate** via JWT sign-up/sign-in with separate admin (“staff”) workflows for managing Discover listings.
+
+The repository is wired for **local development with Docker Compose** or **manual Python + Node installs**, and supports **PostgreSQL locally** or **AWS RDS** in staging/production patterns.
 
 ---
-### First-Time Setup (5 minutes)
 
-```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd everify-job-search
+## Tech Stack
 
-# 2. Start Docker Desktop application
-# Wait until you see "Docker Desktop is running"
+| Layer | Technologies |
+|--------|----------------|
+| **Frontend** | React 19, TypeScript, Vite |
+| **Backend** | Python 3, **Django 5**, Django REST Framework, SimpleJWT |
+| **Database** | PostgreSQL (local container or **AWS RDS**) |
+| **File storage** | Local `media/` in dev; **AWS S3** via `django-storages` when `USE_S3=true` |
+| **Email (optional)** | AWS SES-compatible settings for reminders after saving a job |
+| **Containers** | Docker, Docker Compose |
+| **API docs** | Swagger UI at `/swagger/`, ReDoc at `/redoc/` |
 
-# 3. Build containers (takes 2-3 minutes first time)
-docker compose build
+---
 
-# 4. Start all services
-docker compose up -d
+## Features
 
-# 5. Create database tables
-docker compose exec backend python manage.py migrate
+| Area | What it does |
+|------|----------------|
+| **CRUD — Discover listings** | Admins (`is_staff`) can create, read, update, and delete public job postings (`/api/companies/` …). Authenticated requests use JWT (`Authorization: Bearer …`). |
+| **CRUD — Personal tracker** | Logged-in users manage their own job rows: list/create (`POST /api/tracker/`), update/delete (`PUT/PATCH/DELETE /api/tracker/<id>/`), including status and notes. |
+| **Saving from Discover** | `POST /api/tracker/` with `{ "source_job": <discover_job_id> }` copies listing data into the user’s tracker (with reminder email hooks when SES is configured). |
+| **File management (S3)** | Resume / cover letter `FileField` uploads route to S3 when `USE_S3` and bucket vars are set; otherwise files land under `backend/media/`. |
+| **Analytics** | Dashboard-style summaries for tracked applications (counts, trends) in the React app (`JobTrackerAnalytics`). |
+| **Search & filter** | Client-side filtering on Discover and the tracker (titles, companies, locations, salary ranges, filters, etc.). |
 
-# 6. Create admin user
-docker compose exec backend python manage.py createsuperuser
-# Enter username, email (optional), and password
+---
 
-# 7. Verify everything works
-# Open browser and visit:
-# - Frontend: http://localhost:5173
-# - Backend API: http://localhost:8000/swagger/
-# - Admin Panel: http://localhost:8000/admin/
+## Prerequisites
 
+Choose **one** path:
+
+### Option A — Docker (recommended)
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Compose v2 included)
+- [Git](https://git-scm.com/)
+
+### Option B — Local installs
+
+- Python **3.11+**, `pip`, and a virtualenv
+- Node.js **20+** and npm
+- PostgreSQL **15** (or compatible) reachable from your machine
+
+---
+
+## Environment variables
+
+Create a **`backend/.env`** (optional for Docker if you rely on Compose env) or export variables in your shell. Typical keys:
+
+### Core Django
+
+```env
+SECRET_KEY=change-me-in-production-use-long-random-string
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
 ```
 
-**✅ You're ready to code!**
+### Database (local Postgres — matches Compose defaults)
+
+```env
+DATABASE_NAME=jobtracker
+DATABASE_USER=jobtracker
+DATABASE_PASSWORD=jobtracker_password
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+```
+
+### Database (AWS RDS example)
+
+Use the hostname, username, password, and DB name from the RDS console (same variable names — only values change):
+
+```env
+DATABASE_HOST=my-app.xxxxx.us-east-1.rds.amazonaws.com
+DATABASE_PORT=5432
+DATABASE_NAME=internportal_prod
+DATABASE_USER=app_user
+DATABASE_PASSWORD=super-secret-password-from-secrets-manager
+```
+
+### Frontend API base URL
+
+Used by Axios (`frontend/src/api/client.ts`):
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+In Docker Compose, this is injected for the frontend service as `http://localhost:8000` for browser-side calls from your machine.
+
+### AWS S3 (optional — uploads)
+
+Only required when storing resumes/cover letters in S3:
+
+```env
+USE_S3=true
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_STORAGE_BUCKET_NAME=your-bucket-name
+AWS_S3_REGION_NAME=us-east-1
+AWS_S3_CUSTOM_DOMAIN=          # optional CDN / CloudFront hostname
+AWS_QUERYSTRING_EXPIRE=3600   # seconds for presigned URLs
+```
+
+Leave `USE_S3` unset or `false` to use **`backend/media/`** locally.
+
+### AWS SES (optional — reminder emails)
+
+```env
+AWS_SES_REGION_NAME=us-east-1
+AWS_SES_FROM_EMAIL=noreply@yourdomain.com
+```
 
 ---
 
-## Daily Workflow
+## Local setup & installation
+
+### 1. Clone
 
 ```bash
-# Start working
+git clone https://github.com/<your-org>/<your-repo>.git
+cd <your-repo>
+```
+
+### 2. Run with Docker Compose
+
+```bash
+docker compose build
 docker compose up -d
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py createsuperuser
+```
 
-# Code normally in VS Code
-# - Edit frontend/src/ → Browser auto-refreshes
-# - Edit backend/api/ → Django auto-reloads
+Then open:
 
-# View logs (if needed)
-docker compose logs -f
+- **Frontend**: http://localhost:5173  
+- **Backend home**: http://localhost:8000/  
+- **Swagger**: http://localhost:8000/swagger/  
+- **Admin**: http://localhost:8000/admin/  
 
-# Stop working
+Daily workflow:
+
+```bash
+docker compose up -d
+# ... edit code ...
 docker compose down
 ```
 
+Rebuild after changing **`requirements.txt`** or **`frontend/package.json`**:
+
+```bash
+docker compose build backend frontend
+docker compose up -d
+```
+
+### 3. Run without Docker (alternative)
+
+**Backend**
+
+```bash
+cd backend
+python -m venv .venv
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+# macOS/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+export DJANGO_SETTINGS_MODULE=config.settings
+# plus DATABASE_* and SECRET_KEY for your Postgres instance — see above
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver 0.0.0.0:8000
+```
+
+**Frontend**
+
+```bash
+cd frontend
+npm install
+# Create frontend/.env if needed:
+echo VITE_API_BASE_URL=http://localhost:8000 > .env
+npm run dev
+```
+
 ---
 
-## Project Structure
+## Automated tests (Week 11)
+
+### Frontend — Vitest + React Testing Library
+
+This project uses **Vitest** (official test runner for Vite). It uses the **same style** as Jest: `describe`, `it`, `expect`, and mocks. React components are tested with **React Testing Library**.
+
+**Files to know**
+
+| File | Purpose |
+|------|---------|
+| `frontend/vite.config.ts` | Vite + Vitest config (`test.environment: 'jsdom'`, setup file). |
+| `frontend/src/test/setup.ts` | Registers `@testing-library/jest-dom` matchers. |
+| `frontend/src/components/JobList.test.tsx` | Discover list rendering + empty state. |
+| `frontend/src/components/HealthCheck.test.tsx` | Health UI success + error paths. |
+
+**Install & run**
+
+```bash
+cd frontend
+npm install
+npm run test:run       # CI-friendly (single pass)
+npm test               # watch mode during development
+```
+
+### Backend — Pytest + Django
+
+**Files to know**
+
+| File | Purpose |
+|------|---------|
+| `backend/pytest.ini` | Sets `DJANGO_SETTINGS_MODULE=config.settings_test`. |
+| `backend/config/settings_test.py` | In-memory **SQLite**, fast password hasher — no RDS/S3 needed. |
+| `backend/api/tests/test_job_api_integration.py` | REST integration tests (`/api/health/`, Discover CRUD authorization, Tracker CRUD, save-from-discover with mocked mail). |
+
+**Install & run (local venv)**
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest
+pytest -v              # verbose
+pytest api/tests/test_job_api_integration.py::test_health_check_returns_200
+```
+
+**Run inside Docker**
+
+```bash
+docker compose exec backend pip install -r requirements.txt
+docker compose exec backend pytest
+```
+
+---
+
+## Useful API endpoints (abbrev.)
+
+| Endpoint | Methods | Notes |
+|----------|---------|--------|
+| `/api/health/` | GET | Public health check |
+| `/api/companies/` | GET, POST | Discover jobs; POST requires staff |
+| `/api/companies/<id>/` | PUT, PATCH, DELETE | Staff only for writes |
+| `/api/tracker/` | GET, POST | Authenticated user’s jobs |
+| `/api/tracker/<id>/` | PUT, PATCH, DELETE | Owner only |
+| `/api/auth/signup/`, `/api/auth/login/` | POST | Auth flows |
+| `/swagger/` | GET | Interactive API docs |
+
+---
+
+## Project structure (abbrev.)
 
 ```
-everify-job-search/
+.
 ├── docker-compose.yml
-├── frontend/               # React + TypeScript
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── api/client.ts  # Axios + JWT
-│   │   └── components/
-│   └── Dockerfile
-└── backend/               # Django REST
-    ├── api/
-    │   ├── models.py      # Database models
-    │   ├── views.py       # API endpoints
-    │   ├── serializers.py # Data formatting
-    │   └── urls.py        # API routes
-    ├── config/
-    │   ├── settings.py    # Django config
-    │   └── urls.py        # Main routing
-    └── Dockerfile
-```
-
----
-
-## Common Tasks
-
-### Add New Database Model
-
-```python
-# 1. Edit backend/api/models.py
-class Job(models.Model):
-    title = models.CharField(max_length=200)
-    company = models.CharField(max_length=200)
-
-# 2. Create and apply migration
-docker compose exec backend python manage.py makemigrations
-docker compose exec backend python manage.py migrate
-```
-
-### Add New API Endpoint
-
-```python
-# 1. Create serializer (backend/api/serializers.py)
-class JobSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Job
-        fields = '__all__'
-
-# 2. Create view (backend/api/views.py)
-class JobViewSet(viewsets.ModelViewSet):
-    queryset = Job.objects.all()
-    serializer_class = JobSerializer
-
-# 3. Add route (backend/api/urls.py)
-router.register(r'jobs', JobViewSet)
-
-# 4. Test at http://localhost:8000/swagger/
-```
-
-### Add New React Component
-
-```typescript
-// frontend/src/components/JobList.tsx
-import { useEffect, useState } from 'react';
-import apiClient from '../api/client';
-
-function JobList() {
-  const [jobs, setJobs] = useState([]);
-  
-  useEffect(() => {
-    apiClient.get('/jobs/').then(res => setJobs(res.data));
-  }, []);
-  
-  return (
-    <div>
-      {jobs.map(job => <div key={job.id}>{job.title}</div>)}
-    </div>
-  );
-}
-```
-
-### Add Dependencies
-
-```bash
-# Python package
-# 1. Add to backend/requirements.txt
-# 2. Rebuild
-docker compose build backend
-docker compose up -d
-
-# npm package
-docker compose exec frontend npm install <package>
-docker compose build frontend
-docker compose up -d
-```
-
----
-
-## Docker Commands
-
-```bash
-# Start/stop
-docker compose up -d              # Start all
-docker compose down               # Stop all
-docker compose restart backend    # Restart one service
-
-# Logs
-docker compose logs -f            # All logs
-docker compose logs -f backend    # Backend only
-
-# Database
-docker compose exec backend python manage.py migrate
-docker compose exec backend python manage.py makemigrations
-docker compose exec backend python manage.py shell
-
-# Build
-docker compose build              # Rebuild all
-docker compose build backend      # Rebuild one
+├── README.md
+├── backend/
+│   ├── api/                 # Models, views, serializers, urls, tests
+│   ├── config/              # settings.py, settings_test.py, urls
+│   ├── pytest.ini
+│   ├── requirements.txt
+│   └── manage.py
+└── frontend/
+    ├── src/
+    │   ├── api/client.ts
+    │   ├── components/      # *.test.tsx next to components
+    │   └── test/setup.ts
+    ├── package.json
+    └── vite.config.ts
 ```
 
 ---
 
 ## Troubleshooting
 
-### Changes not showing?
-```bash
-docker compose restart backend  # or frontend
-```
-
-### Port already in use?
-```bash
-docker compose down
-# Or change ports in docker-compose.yml
-```
-
-### Complete reset (⚠️ deletes all data)
-```bash
-docker compose down -v
-docker compose build
-docker compose up -d
-docker compose exec backend python manage.py migrate
-docker compose exec backend python manage.py createsuperuser
-```
+- **Port in use**: change host ports in `docker-compose.yml` or stop conflicting services.
+- **Migrations out of date**: `docker compose exec backend python manage.py migrate`
+- **CORS errors**: ensure `VITE_API_BASE_URL` matches how the browser reaches the API and that `CORS_ALLOWED_ORIGINS` in `config/settings.py` includes your dev origin (e.g. `http://localhost:5173`).
 
 ---
 
-## API Endpoints
+## License / course use
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/health/` | GET | Health check |
-| `/api/token/` | POST | Get JWT token |
-| `/api/token/refresh/` | POST | Refresh token |
-| `/swagger/` | GET | API docs |
-| `/admin/` | GET | Admin panel |
-
-Test all endpoints at: http://localhost:8000/swagger/
+Replace this section with your institution’s license or academic honesty note if required.
 
 ---
 
-## Access URLs
-
-- **Frontend**: http://localhost:5173
-- **API Docs**: http://localhost:8000/swagger/
-- **Admin Panel**: http://localhost:8000/admin/
-- **Database**: localhost:5432 (use pgAdmin/DBeaver)
-
----
-
-## FAQ
-
-**Q: Need to install Python/Node?**  
-A: No! Docker has everything.
-
-**Q: Can I use my editor normally?**  
-A: Yes! Edit files, changes sync automatically.
-
-**Q: What if my teammate uses Windows?**  
-A: Docker ensures identical environments.
-
-**Q: How to access database?**  
-A: Use pgAdmin/DBeaver: `localhost:5432`, user/db: `jobtracker`, password: `jobtracker_password`
-
----
-
-## Resources
-
-- Django: https://docs.djangoproject.com/
-- Django REST: https://www.django-rest-framework.org/
-- React: https://react.dev/
-- Docker: https://docs.docker.com/
-
----
-
-**Happy Coding! 🚀**
+**Maintainer tip:** After pulling new changes, always `migrate` the database and reinstall dependencies when lockfiles or `requirements.txt` change.
