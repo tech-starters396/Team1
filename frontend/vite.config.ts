@@ -1,15 +1,13 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Vitest shares Vite config; test API matches Jest (`describe`, `it`, `expect`).
-// https://vitest.dev/
+// Dev server (`npm run dev` / Docker) must not import Vitest — the optional named volume
+// `frontend_node_modules` may not include devDependencies Vitest pulls in from `vite.config`.
+// See `vitest.config.ts` for test settings (used only by `npm run test`).
 export default defineConfig({
   plugins: [react()],
-  test: {
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    passWithNoTests: false,
-    clearMocks: true,
+  server: {
+    host: true,
+    port: 5173,
   },
 })
